@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ReMark — QR Attendance</title>
+<style>
+  :root{
+    --navy:#1E2761; --navy-dk:#162055; --teal:#0E7C7B; --orange:#E8930C;
+    --bg:#F5F6FA; --card:#FFFFFF; --border:#E1E5EE; --text:#1B2440; --muted:#5B6478;
+    --green-bg:#E7F3EE; --green-txt:#0E7C4F; --red-bg:#FBE9E7; --red-txt:#B3261E;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#14172A; --card:#1C2038; --border:#2C3150; --text:#ECEFFA; --muted:#A3A9C2;
+      --green-bg:#133227; --red-bg:#3A1C19;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#14172A; --card:#1C2038; --border:#2C3150; --text:#ECEFFA; --muted:#A3A9C2;
+    --green-bg:#133227; --red-bg:#3A1C19;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  header{
+    background:var(--navy); color:#fff; padding:18px 20px calc(16px);
+    position:sticky; top:0; z-index:5;
+  }
+  header h1{margin:0; font-size:20px;}
+  header p{margin:2px 0 0; font-size:13px; color:#CADCFC;}
+  .tabs{display:flex; gap:6px; padding:10px 14px; background:var(--card); border-bottom:1px solid var(--border); position:sticky; top:62px; z-index:4; overflow-x:auto;}
+  .tab{flex:1; text-align:center; padding:9px 6px; border-radius:8px; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; white-space:nowrap;}
+  .tab.active{background:var(--navy); color:#fff;}
+  main{padding:16px; max-width:560px; margin:0 auto;}
+  .view{display:none;}
+  .view.active{display:block;}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:14px;}
+  .card h2{margin:0 0 10px; font-size:15px; color:var(--navy);}
+  :root[data-theme="dark"] .card h2, body.dark-mode .card h2 {color:#CADCFC;}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .card h2{color:#CADCFC;} }
+  input[type=text]{width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font-size:14px;}
+  button{font-family:inherit; cursor:pointer; border:none; border-radius:8px; font-weight:600; font-size:14px;}
+  .btn-primary{background:var(--orange); color:#fff; padding:10px 16px;}
+  .btn-secondary{background:var(--navy); color:#fff; padding:10px 16px;}
+  .btn-block{width:100%;}
+  .row{display:flex; gap:8px; margin-bottom:10px;}
+  .student-row{display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);}
+  .student-row:last-child{border-bottom:none;}
+  .student-name{font-size:14px; font-weight:600;}
+  .student-id{font-size:12px; color:var(--muted);}
+  .qr-btn{background:var(--teal); color:#fff; padding:6px 10px; font-size:12px; border-radius:6px;}
+  #qrModalBack{display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:20; align-items:center; justify-content:center;}
+  #qrModal{background:#fff; border-radius:14px; padding:24px; text-align:center; max-width:280px;}
+  #qrModal p{color:#222; font-weight:700; margin:10px 0 0;}
+  #qrcodeImg{display:flex; justify-content:center;}
+  #reader{width:100%; min-height:220px; border-radius:12px; overflow:hidden; background:#000;}
+  .scan-status{margin-top:12px; padding:12px; border-radius:10px; font-size:14px; font-weight:600; text-align:center;}
+  .status-ok{background:var(--green-bg); color:var(--green-txt);}
+  .status-err{background:var(--red-bg); color:var(--red-txt);}
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th,td{padding:8px 6px; text-align:left; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-size:11px; text-transform:uppercase;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:20px 0;}
+  .muted{color:var(--muted); font-size:12px;}
+  .table-wrap{width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; margin-top:10px;}
+  #sf2Table{min-width:max-content; font-size:12px;}
+  #sf2Table th,#sf2Table td{white-space:nowrap; text-align:center; padding:7px 8px;}
+  #sf2Table th:nth-child(2),#sf2Table td:nth-child(2){text-align:left; min-width:180px;}
+  input[type=file]{width:100%; margin:8px 0; color:var(--text); font-size:13px;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📷 ReMark</h1>
+  <p>QR Code-Based Attendance System</p>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="roster">Roster</div>
+  <div class="tab" data-tab="scan">Scan</div>
+  <div class="tab" data-tab="log">Today's Log</div>
+</div>
+
+<main>
+
+  <!-- ROSTER -->
+  <div class="view active" id="view-roster">
+    <div class="card">
+      <h2>Add Student</h2>
+      <div class="row">
+        <input type="text" id="newName" placeholder="Student name">
+        <button class="btn-primary" id="addStudentBtn">Add</button>
+      </div>
+      <p class="muted">Each student gets a unique QR code. Import your SF2 Excel file to load the existing student roster.</p>
+      <label for="sf2File" class="muted">Import SF2 Excel file (.xls or .xlsx)</label>
+      <input type="file" id="sf2File" accept=".xls,.xlsx">
+      <p class="muted" id="importStatus">The spreadsheet is processed in this browser; it is not uploaded to GitHub.</p>
+    </div>
+    <div class="card">
+      <h2>Student Roster (<span id="rosterCount">0</span>)</h2>
+      <div id="rosterList"><div class="empty">No students yet — add one above.</div></div>
+    </div>
+  </div>
+
+  <!-- SCAN -->
+  <div class="view" id="view-scan">
+    <div class="card">
+      <h2>Scan Attendance</h2>
+      <button class="btn-secondary btn-block" id="startScanBtn">Start Scanner</button>
+      <div id="reader" style="margin-top:12px;"></div>
+      <div id="scanStatus" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="view" id="view-log">
+    <div class="card">
+      <h2>Today's Attendance</h2>
+      <table id="logTable" style="display:none;">
+        <thead><tr><th>Time</th><th>Name</th><th>ID</th></tr></thead>
+        <tbody id="logBody"></tbody>
+      </table>
+      <div class="empty" id="logEmpty">No scans recorded yet today.</div>
+      <hr style="border:0;border-top:1px solid var(--border);margin:18px 0;">
+      <h2>SF2-Style Monthly Attendance</h2>
+      <p class="muted">An X is shown for each recorded attendance day. Scroll sideways to see all dates.</p>
+      <button class="btn-primary btn-block" id="exportSf2Btn" type="button">Export Monthly Attendance CSV</button>
+      <button class="btn-secondary btn-block" id="exportRosterBtn" type="button" style="margin-top:8px;">Export Roster + Stable QR IDs</button>
+      <div class="table-wrap" id="sf2TableWrap"><div class="empty">Add or import students to build the attendance sheet.</div></div>
+    </div>
+  </div>
+
+</main>
+
+<div id="qrModalBack">
+  <div id="qrModal">
+    <div id="qrcodeImg"></div>
+    <p id="qrModalName"></p>
+    <button class="btn-primary" style="margin-top:14px;" id="downloadQrBtn">Download QR card</button>
+    <button class="btn-secondary" style="margin-top:8px;" id="closeQrBtn">Close</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"
+  onerror="this.onerror=null;this.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"
+  onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js';"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"
+  onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';"></script>
+<script>
+let html5Qr = null;
+function localDateKey(date = new Date()){
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  const d = String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+const todayKey = () => localDateKey();
+
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
+  document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+name));
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click', ()=>switchTab(t.dataset.tab)));
+
+function genId(){ return 'S' + Math.random().toString(36).slice(2,8).toUpperCase(); }
+
+function renderRoster(students){
+  const list = document.getElementById('rosterList');
+  const count = document.getElementById('rosterCount');
+  count.textContent = students.length;
+  if(!students.length){ list.innerHTML = '<div class="empty">No students yet — add one above.</div>'; return; }
+  list.innerHTML = '';
+  students.forEach(s=>{
+    const row = document.createElement('div');
+    row.className = 'student-row';
+    const details = [s.section || '', s.lrn ? 'LRN: ' + s.lrn : '', 'QR ID: ' + s.id].filter(Boolean).join(' · ');
+    row.innerHTML = `<div><div class="student-name">${escapeHtml(s.name)}</div><div class="student-id">${escapeHtml(details)}</div></div>`;
+    const btn = document.createElement('button');
+    btn.className = 'qr-btn'; btn.textContent = 'Show QR';
+    btn.onclick = ()=> showQr(s.id, s.name);
+    row.appendChild(btn);
+    list.appendChild(row);
+  });
+}
+
+function escapeHtml(str){ const d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+let activeQrStudent = null;
+function showQr(id, name){
+  const box = document.getElementById('qrcodeImg');
+  box.innerHTML = '';
+  activeQrStudent = loadStudents().find(s => s.id === id) || {id, name};
+  if(typeof QRCode === 'undefined'){
+    box.textContent = 'QR code library unavailable. Connect to the internet and reload.';
+    document.getElementById('qrModalName').textContent = name + ' (' + id + ')';
+    document.getElementById('qrModalBack').style.display = 'flex';
+    return;
+  }
+  new QRCode(box, { text:id, width:220, height:220 });
+  document.getElementById('qrModalName').textContent = name + ' · ' + (activeQrStudent.section || 'ACAD 12-G');
+  document.getElementById('qrModalBack').style.display = 'flex';
+}
+
+document.getElementById('downloadQrBtn').onclick = function(){
+  if(!activeQrStudent) return;
+  const box = document.getElementById('qrcodeImg');
+  const canvas = box.querySelector('canvas');
+  const img = box.querySelector('img');
+  let dataUrl = canvas ? canvas.toDataURL('image/png') : (img ? img.src : '');
+  if(!dataUrl){
+    alert('QR code is not ready yet. Please wait a moment and try again.');
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = dataUrl;
+  a.download = 'ReMark_QR_' + String(activeQrStudent.id).replace(/[^a-z0-9_-]/gi,'') + '.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+document.getElementById('closeQrBtn').onclick = ()=> document.getElementById('qrModalBack').style.display='none';
+
+function addStudent(){
+  const input = document.getElementById('newName');
+  const name = input.value.trim();
+  if(!name) return;
+  const id = genId();
+  const students = loadStudents();
+  students.push({ name, section:'', lrn:'', id });
+  saveStudents(students);
+  renderRoster(students.sort((a,b)=> a.name.localeCompare(b.name)));
+  input.value = '';
+}
+document.getElementById('addStudentBtn').onclick = addStudent;
+
+function setScanStatus(msg, ok){
+  const el = document.getElementById('scanStatus');
+  if(!msg){ el.style.display = 'none'; el.textContent = ''; return; }
+  el.style.display = 'block';
+  el.className = 'scan-status ' + (ok ? 'status-ok' : 'status-err');
+  el.textContent = msg;
+}
+
+function handleScan(decodedId){
+  try{
+    const students = loadStudents();
+    const student = students.find(s=>s.id===decodedId);
+    if(!student){ setScanStatus('✕ Invalid QR code — student not found.', false); return; }
+    const dk = todayKey();
+    const logs = loadLogs();
+    const dupe = logs.find(l=>l.studentId===decodedId && l.dateKey===dk);
+    if(dupe){ setScanStatus('✕ ' + student.name + ' already logged today.', false); return; }
+    logs.push({
+      studentId: decodedId, name: student.name, dateKey: dk,
+      timestamp: new Date().toISOString(),
+      timeLabel: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+    });
+    saveLogs(logs);
+    renderLog(logsForToday());
+    renderSf2Month();
+    setScanStatus('✓ Attendance logged for ' + student.name + '.', true);
+  }catch(e){ console.error(e); setScanStatus('✕ Error logging attendance.', false); }
+}
+
+function withTimeout(promise, ms, label){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=> setTimeout(()=> reject(new Error(label+' timed out')), ms))
+  ]);
+}
+
+async function resetScanner(){
+  if(html5Qr){
+    try{ await html5Qr.stop(); }catch(e){}
+    try{ html5Qr.clear(); }catch(e){}
+  }
+  html5Qr = null;
+}
+
+document.getElementById('startScanBtn').onclick = async function(){
+  if(html5Qr){ return; }
+  if(typeof Html5Qrcode === 'undefined'){
+    setScanStatus('\u2715 QR scanner library did not load. Check your internet connection (some networks block it), then reload the page.', false);
+    return;
+  }
+  const btn = this;
+  let settled = false;
+  btn.textContent = 'Starting camera…';
+  btn.disabled = true;
+  setScanStatus('');
+
+  // Hard backstop: no matter what hangs or fails silently below, this guarantees
+  // the button is never stuck for more than 20 seconds.
+  const watchdog = setTimeout(async ()=>{
+    if(settled) return;
+    settled = true;
+    await resetScanner();
+    btn.textContent = 'Start Scanner';
+    btn.disabled = false;
+    setScanStatus('✕ Camera took too long to respond. Check your browser\u2019s camera permission for this page and try again.', false);
+  }, 20000);
+
+  try{
+    html5Qr = new Html5Qrcode('reader');
+    const scanConfig = { fps: 10, qrbox: 220 };
+
+    // Prefer an explicit back camera id (more reliable than facingMode on many Android/iOS browsers),
+    // but never let camera discovery hang the UI — fall back to facingMode after a short timeout.
+    let cameraTarget = { facingMode: 'environment' };
+    try{
+      const cameras = await withTimeout(Html5Qrcode.getCameras(), 6000, 'Camera list');
+      if(cameras && cameras.length){
+        const back = cameras.find(c => /back|rear|environment/i.test(c.label || '')) || cameras[cameras.length - 1];
+        cameraTarget = back.id;
+      }
+    }catch(listErr){
+      console.warn('Falling back to facingMode constraint:', listErr);
+    }
+
+    await withTimeout(
+      html5Qr.start(cameraTarget, scanConfig, (decodedText)=> handleScan(decodedText), ()=>{}),
+      12000,
+      'Camera start'
+    );
+    if(settled) return;
+    settled = true;
+    clearTimeout(watchdog);
+    btn.textContent = 'Scanner running';
+  }catch(e){
+    if(settled) return;
+    settled = true;
+    clearTimeout(watchdog);
+    console.error('ReMark camera error:', e);
+    await resetScanner();
+    btn.textContent = 'Start Scanner';
+    btn.disabled = false;
+    const detail = (e && e.message) ? e.message : 'unknown error';
+    setScanStatus('✕ Camera did not start (' + detail + '). Check permissions and try again.', false);
+  }
+};
+
+function renderLog(rows){
+  const body = document.getElementById('logBody');
+  const table = document.getElementById('logTable');
+  const empty = document.getElementById('logEmpty');
+  if(!rows.length){ table.style.display='none'; empty.style.display='block'; return; }
+  table.style.display='table'; empty.style.display='none';
+  body.innerHTML = '';
+  rows.forEach(r=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(r.timeLabel||'')}</td><td>${escapeHtml(r.name||'')}</td><td>${escapeHtml(r.studentId||'')}</td>`;
+    body.appendChild(tr);
+  });
+}
+
+// --- localStorage persistence (per-device; works offline, no account needed) ---
+function loadStudents(){
+  try{ return JSON.parse(localStorage.getItem('remark_students') || '[]'); }
+  catch(e){ console.error(e); return []; }
+}
+function saveStudents(list){
+  try{ localStorage.setItem('remark_students', JSON.stringify(list)); }
+  catch(e){ console.error(e); }
+}
+function loadLogs(){
+  try{ return JSON.parse(localStorage.getItem('remark_logs') || '[]'); }
+  catch(e){ console.error(e); return []; }
+}
+function saveLogs(list){
+  try{ localStorage.setItem('remark_logs', JSON.stringify(list)); }
+  catch(e){ console.error(e); }
+}
+function logsForToday(){
+  const dk = todayKey();
+  return loadLogs().filter(l=>l.dateKey===dk).sort((a,b)=> b.timestamp.localeCompare(a.timestamp));
+}
+
+
+function normalizedName(name){
+  return String(name || '').trim().replace(/\s+/g,' ').toLocaleLowerCase();
+}
+
+function monthSheetName(date = new Date()){
+  const names = ['JAN','FEB','MARCH','APRIL','MAY','JUNE','JULY','AUG','SEPT','OCT','NOV','DEC'];
+  return names[date.getMonth()];
+}
+
+function cleanCell(value){
+  return String(value == null ? '' : value).trim();
+}
+function looksLikeLrn(value){
+  const v = cleanCell(value).replace(/[\s-]/g,'');
+  return /^\d{10,14}$/.test(v);
+}
+function looksLikeStudentName(value){
+  const v = cleanCell(value);
+  return v.length > 3 && /[A-Za-z]/.test(v) &&
+    !/^(name|student name|learner's name|learners name|total|male|female|remarks|section|lrn)$/i.test(v);
+}
+function findHeaderIndexes(rows){
+  for(let i=0; i<Math.min(rows.length,40); i++){
+    const cells = (rows[i] || []).map(v=>cleanCell(v).toLowerCase());
+    const nameIndex = cells.findIndex(v=>/student name|learner.?s name|name of learner|^name$/.test(v));
+    const sectionIndex = cells.findIndex(v=>/^section$|grade and section|class section/.test(v));
+    const lrnIndex = cells.findIndex(v=>/^lrn$|learner reference number/.test(v));
+    if(nameIndex >= 0 && (sectionIndex >= 0 || lrnIndex >= 0)){
+      return {headerRow:i, nameIndex, sectionIndex, lrnIndex};
+    }
+  }
+  return null;
+}
+function parseRosterRows(rows){
+  const found = [];
+  const header = findHeaderIndexes(rows);
+  if(header){
+    for(let i=header.headerRow+1; i<rows.length; i++){
+      const row = rows[i] || [];
+      const name = cleanCell(row[header.nameIndex]);
+      const section = header.sectionIndex >= 0 ? cleanCell(row[header.sectionIndex]) : '';
+      const lrn = header.lrnIndex >= 0 ? cleanCell(row[header.lrnIndex]).replace(/[\s-]/g,'') : '';
+      if(looksLikeStudentName(name) && !/total per day|male|female|remarks/i.test(name)){
+        found.push({name, section, lrn: looksLikeLrn(lrn) ? lrn : ''});
+      }
+    }
+  }
+  // Screenshot-style roster: Column A = learner name, B = section, C = LRN.
+  if(!found.length){
+    rows.forEach(row=>{
+      if(!row || row.length < 3) return;
+      const name = cleanCell(row[0]);
+      const section = cleanCell(row[1]);
+      const lrn = cleanCell(row[2]).replace(/[\s-]/g,'');
+      if(looksLikeStudentName(name) && looksLikeLrn(lrn) &&
+         !/total per day|male|female|remarks/i.test(name)){
+        found.push({name, section, lrn});
+      }
+    });
+  }
+  // Fallback for common SF2 sheets where a numbered row has the name in column G.
+  if(!found.length){
+    rows.forEach(row=>{
+      if(!row) return;
+      const number = cleanCell(row[0]);
+      const name = cleanCell(row[6]);
+      if(/^\d+$/.test(number) && looksLikeStudentName(name) &&
+         !/total per day|male|female|remarks/i.test(name)){
+        found.push({name, section:'', lrn:''});
+      }
+    });
+  }
+  const unique = new Map();
+  found.forEach(st=>{
+    const key = st.lrn ? 'lrn:'+st.lrn : 'name:'+normalizedName(st.name)+'|'+normalizedName(st.section);
+    if(!unique.has(key)) unique.set(key, st);
+  });
+  return [...unique.values()];
+}
+async function importSf2File(file){
+  const status = document.getElementById('importStatus');
+  if(!file) return;
+  if(typeof XLSX === 'undefined'){
+    status.textContent = 'Excel reader library did not load. Check your internet connection, reload the page, and try again.';
+    return;
+  }
+  status.textContent = 'Reading student name, section, and LRN…';
+  try{
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, {type:'array', cellDates:false, raw:false});
+    // Prefer a sheet with recognizable roster rows, rather than relying only on the month name.
+    let parsed = null;
+    let chosenSheet = workbook.SheetNames[0];
+    for(const sheetName of workbook.SheetNames){
+      const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {header:1, defval:'', raw:false});
+      const roster = parseRosterRows(rows);
+      if(roster.length > (parsed ? parsed.length : 0)){
+        parsed = roster;
+        chosenSheet = sheetName;
+      }
+    }
+    const imported = parsed || [];
+    if(!imported.length){
+      status.textContent = 'No roster rows found. The importer expects columns for student name, section, and LRN, like your screenshot (A=name, B=section, C=LRN).';
+      return;
+    }
+
+    const existing = loadStudents();
+    const byLrn = new Map();
+    const byNameSection = new Map();
+    existing.forEach(st=>{
+      if(st.lrn) byLrn.set(cleanCell(st.lrn), st);
+      byNameSection.set(normalizedName(st.name)+'|'+normalizedName(st.section), st);
+    });
+    let added = 0, updated = 0;
+    imported.forEach(info=>{
+      let student = info.lrn ? byLrn.get(info.lrn) : null;
+      if(!student) student = byNameSection.get(normalizedName(info.name)+'|'+normalizedName(info.section));
+      if(student){
+        // Keep the existing QR ID stable while refreshing imported details.
+        student.name = info.name;
+        student.section = info.section || student.section || '';
+        student.lrn = info.lrn || student.lrn || '';
+        updated++;
+      }else{
+        student = {name:info.name, section:info.section || '', lrn:info.lrn || '', id:genId()};
+        existing.push(student);
+        added++;
+      }
+      if(info.lrn) byLrn.set(info.lrn, student);
+      byNameSection.set(normalizedName(student.name)+'|'+normalizedName(student.section), student);
+    });
+    existing.sort((a,b)=>a.name.localeCompare(b.name));
+    saveStudents(existing);
+    renderRoster(existing);
+    renderSf2Month();
+    status.textContent = `Imported ${imported.length} roster rows from "${chosenSheet}". Added ${added}; updated ${updated}. Existing QR IDs were preserved for matched students.`;
+  }catch(err){
+    console.error('SF2 import error:', err);
+    status.textContent = 'Could not read this Excel file. Try opening it in Excel and saving a copy as .xlsx, then import it again.';
+  }
+}
+document.getElementById('sf2File').addEventListener('change', function(){
+  importSf2File(this.files && this.files[0]);
+});
+
+function csvCell(value){
+  const s = String(value == null ? '' : value);
+  return '"' + s.replace(/"/g,'""') + '"';
+}
+
+function getCurrentMonthDays(){
+  const now = new Date();
+  return {year:now.getFullYear(), month:now.getMonth(), days:new Date(now.getFullYear(),now.getMonth()+1,0).getDate()};
+}
+
+function renderSf2Month(){
+  const wrap = document.getElementById('sf2TableWrap');
+  if(!wrap) return;
+  const students = loadStudents().sort((a,b)=>a.name.localeCompare(b.name));
+  if(!students.length){
+    wrap.innerHTML = '<div class="empty">Import your SF2 file or add students to build the attendance sheet.</div>';
+    return;
+  }
+  const {year,month,days} = getCurrentMonthDays();
+  const monthPrefix = `${year}-${String(month+1).padStart(2,'0')}-`;
+  const monthLogs = loadLogs().filter(l=>String(l.dateKey||'').startsWith(monthPrefix));
+  const present = new Set(monthLogs.map(l=>`${l.studentId}|${l.dateKey}`));
+  let html = '<table id="sf2Table"><thead><tr><th>No.</th><th>Student Name</th>';
+  for(let d=1; d<=days; d++) html += `<th>${d}</th>`;
+  html += '<th>Total</th></tr></thead><tbody>';
+  students.forEach((s,i)=>{
+    let total = 0;
+    html += `<tr><td>${i+1}</td><td>${escapeHtml(s.name)}</td>`;
+    for(let d=1; d<=days; d++){
+      const dateKey = `${monthPrefix}${String(d).padStart(2,'0')}`;
+      const isPresent = present.has(`${s.id}|${dateKey}`);
+      if(isPresent) total++;
+      html += `<td>${isPresent ? 'X' : ''}</td>`;
+    }
+    html += `<td>${total}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function exportSf2Csv(){
+  const students = loadStudents().sort((a,b)=>a.name.localeCompare(b.name));
+  if(!students.length){
+    alert('Import your SF2 file or add students first.');
+    return;
+  }
+  const {year,month,days} = getCurrentMonthDays();
+  const monthPrefix = `${year}-${String(month+1).padStart(2,'0')}-`;
+  const monthLogs = loadLogs().filter(l=>String(l.dateKey||'').startsWith(monthPrefix));
+  const present = new Set(monthLogs.map(l=>`${l.studentId}|${l.dateKey}`));
+  const rows = [['No.','Student Name',...Array.from({length:days},(_,i)=>i+1),'Total']];
+  students.forEach((s,i)=>{
+    let total=0;
+    const marks=[];
+    for(let d=1; d<=days; d++){
+      const dateKey = `${monthPrefix}${String(d).padStart(2,'0')}`;
+      const yes = present.has(`${s.id}|${dateKey}`);
+      marks.push(yes ? 'X' : '');
+      if(yes) total++;
+    }
+    rows.push([i+1,s.name,...marks,total]);
+  });
+  const csv = rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF',csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ReMark_SF2_${year}-${String(month+1).padStart(2,'0')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+document.getElementById('exportSf2Btn').addEventListener('click', exportSf2Csv);
+
+document.getElementById('exportRosterBtn').addEventListener('click', function(){
+  const students = loadStudents();
+  if(!students.length){ alert('Import your roster first.'); return; }
+  const rows = [['Student Name','Section','LRN','Stable QR ID'],
+    ...students.map(s=>[s.name,s.section||'',s.lrn||'',s.id])];
+  const csv = rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF',csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='ReMark_Roster_QR_Backup.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+});
+
+
+function checkLibraries(){
+  if(typeof Html5Qrcode === 'undefined'){
+    const scanBtn = document.getElementById('startScanBtn');
+    scanBtn.disabled = true;
+    scanBtn.textContent = 'Scanner unavailable';
+    setScanStatus('\u2715 QR scanner library did not load. Check your internet connection, then reload the page in Safari.', false);
+  }
+  if(typeof QRCode === 'undefined'){
+    document.getElementById('importStatus').textContent += ' QR generator library is also unavailable; QR images cannot be created until it loads.';
+  }
+  if(typeof XLSX === 'undefined'){
+    document.getElementById('importStatus').textContent = 'Excel reader library did not load. Check your internet connection and reload before importing SF2.';
+  }
+}
+
+function init(){
+  const students = loadStudents().sort((a,b)=> a.name.localeCompare(b.name));
+  renderRoster(students);
+  renderLog(logsForToday());
+  renderSf2Month();
+  checkLibraries();
+}
+init();
+</script>
+</body>
+</html>
